@@ -34,20 +34,29 @@ end
 
 class SingleThreadedServer < Struct.new(:benchmarker)
   def benchmark!
-    server_socket = TCPServer.new '', 2000
-
-    benchmarker.tap do
-      10000.times do
-        client_socket = server_socket.accept
-
-        benchmarker.measure do
-          client_socket.puts Time.now
-        end
-
-        client_socket.close
+    connections.map do |client_socket|
+      benchmarker.measure do
+        client_socket.puts Time.now
       end
-    end
+      client_socket.close
+    end.first(1000)
+  end
+
+  private
+
+  def connections
+    Enumerator.new do |yielder|
+      loop { yielder.yield server_socket.accept }
+    end.lazy
+  end
+
+  def server_socket
+    @server_socket ||= TCPServer.new '', 2000
   end
 end
 
-puts SingleThreadedServer.new(ServerBenchmarker.new).benchmark!
+
+ServerBenchmarker.new.tap do |benchmarker|
+  SingleThreadedServer.new(benchmarker).benchmark!
+  puts benchmarker
+end
